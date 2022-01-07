@@ -15,6 +15,10 @@ const passport = require("passport");
 const passportLocal = require("passport-local");
 const passportLocalMongoose = require('passport-local-mongoose');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
+const GitHubStrategy = require('passport-github').Strategy;
+
+
 var findOrCreate = require('mongoose-findorcreate')
 app.set('trust proxy', 1) // trust first proxy
 app.use(session({
@@ -38,6 +42,9 @@ const peopleSchema = new mongoose.Schema({
     username :String,
     Password: String,
     googleId : String,
+    facebookId: String,
+    githubId: String,
+    linkedinId: String,
     secret : String
 
 });
@@ -189,11 +196,21 @@ app.post("/login", function(req, res) {
       });
 
 });
-
-app.get('/logout', function(req, res) {
- req.logout();
- res.redirect("/")
-})
+/* 
+app.get('/logout', function(req, res){
+    req.logout();
+    res.redirect('/'); //Can fire before session is destroyed?
+  }); */
+  app.get('/logout', function(req,res){
+   
+    req.session.destroy(function (err) {
+        res.clearCookie('connect.sid')
+        res.clearCookie("ai_user");
+        req.session = null;
+        res.redirect('/login'); //Inside a callback… bulletproof!
+       });
+    
+   });
 
 
 
@@ -249,8 +266,130 @@ app.post("/submit", function(req,res){
         }
     })
 })
+app.get("/Name",function(req,res) {
+  People.findById(req.user._id, function(err,foundPeople){
+    if(err){  res.redirect("/login")}
+    else{
+        if(foundPeople){
+            res.send(req.user)
+       
+           
+        }
 
+    }
+})
+})
+
+
+
+
+
+//! ------------------------------ register with facebook ---------------------------------------------------------------------------------
+
+
+
+
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_CLIENT_ID,
+    clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secerets",
+    auth_type: "reauthenticate"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    People.findOrCreate({ facebookId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+
+
+//! ----------------------------------------------------------------login with facebook ------------------------------------------------------
+
+
+app.get('/auth/facebook',
+  passport.authenticate('facebook'));
+
+app.get("/auth/facebook/secerets",
+  passport.authenticate('facebook', {failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+  });
+
+//! -------------------------------------------------------------------------Registre with github --------------------------------------------------------------------------
+
+
+passport.use(new GitHubStrategy({
+    clientID: process.env.GITHUB_CLIENT_ID,
+    clientSecret:  process.env.GITHUB_CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/github/secrets",
+  /*   auth_type: "reauthenticate" */
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    People.findOrCreate({ githubId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+
+
+
+//! -------------------------------------------------- login with github --------------------------------------------------------------------------
+
+app.get('/auth/github',
+  passport.authenticate('github'));
+
+app.get('/auth/github/secrets', 
+  passport.authenticate('github', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/secrets');
+  });
+
+
+
+//! ----------------------------------------------------------------register with linkedin ----------------------------------------------------------------
+   
+var LinkedInStrategy = require('passport-linkedin-oauth2').Strategy;
  
+passport.use(new LinkedInStrategy({
+  clientID: process.env.LINKDEND_CLIENT_ID,
+  clientSecret: process.env.LINKDEND_CLIENT_SECRET,
+  callbackURL: "http://localhost:3000/auth/linkedin/secrets",
+  scope: ['r_emailaddress', 'r_liteprofile'],
+},  function(accessToken, refreshToken, profile, cb) {
+  People.findOrCreate({ linkedinId: profile.id }, function (err, user) {
+    return cb(err, user);
+  });
+}));
+
+app.get('/auth/linkedin', passport.authenticate('linkedin', {
+  scope: ['r_emailaddress', 'r_liteprofile'],
+}))
+  app.get('/auth/linkedin/secrets', passport.authenticate('linkedin', {
+    successRedirect: '/secrets',
+    failureRedirect: '/login'
+  }));
+
+  app.get('/profile', isLoggedIn, function (req, res) {
+    // res.render('pages/profile.ejs', {
+    //   user: req.user // get the user out of session and pass to template
+    // });
+    res.send(req.user)
+  });
+  function isLoggedIn(req, res, next) {
+    if (req.isAuthenticated())
+      return next();
+    res.redirect('/');
+  }
+
+
+//!----------------------------------------------------------------login   ----------------------------------------------------------------
+
+
+
 
  //! listen to port 3000 or Port aléatoire   
  app.listen(process.env.PORT||3000,function () {
